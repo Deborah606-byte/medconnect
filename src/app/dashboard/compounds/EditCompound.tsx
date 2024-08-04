@@ -34,6 +34,8 @@ import { z } from "zod";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "react-toastify";
 import { Checkbox } from "@/components/ui/checkbox";
+import { axiosInstance } from "@/lib/utils";
+import { useAuth } from "@/hooks";
 
 type EditCompoundModalProps = {
   openModal: boolean;
@@ -61,6 +63,7 @@ const EditCompoundModal = ({
   compoundId,
   setEditCompoundId,
 }: EditCompoundModalProps) => {
+  const [user] = useAuth();
   const { data: compound, refetch: fetchCompound } = useFetch<ChpsCompound>({
     queryFn: async () => await getChpsById(compoundId),
     queryKey: ["compounds", compoundId],
@@ -75,7 +78,7 @@ const EditCompoundModal = ({
 
   const {
     register,
-    formState: { errors },
+    formState: { errors, isSubmitting: pending },
     handleSubmit,
     watch,
     setValue,
@@ -99,27 +102,51 @@ const EditCompoundModal = ({
   });
 
   const profilePicture = watch("profilePicture");
+  const name = watch("name");
 
-  const {
-    mutateAsync,
-    isPending: pending,
-    error,
-    reset,
-    isError,
-  } = useMutateData<EditCompoundType, ChpsCompound>({
+  const { mutateAsync, error, reset, isError } = useMutateData<
+    EditCompoundType,
+    ChpsCompound
+  >({
     mutationFn: async (data: EditCompoundType) =>
       updateChpsCompound(data, compoundId),
     config: {
       queryKey: ["compounds"],
     },
+    notificationData: {
+      type: "Compound Update",
+      title: "Compound details have been updated",
+      description: `The compound ${name} has been updated successfully`,
+    },
   });
 
   const submitForm: SubmitHandler<EditCompoundType> = async (data) => {
-    await mutateAsync(data, {
+    if (profilePicture && profilePicture.length > 0) {
+      const formData = new FormData();
+      formData.append("image", profilePicture[0]);
+
+      const res = await axiosInstance.post("/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${user?.auth.token}`,
+        },
+      });
+
+      const resData = await res.data;
+
+      data.profilePictureUrl = resData?.fileUrl || compound?.profilePictureUrl;
+    } else {
+      data.profilePictureUrl = compound?.profilePictureUrl;
+    }
+
+    const { profilePicture: pic, ...rest } = data;
+
+    await mutateAsync(rest as EditCompoundType, {
       onSuccess: (data) => {
         queryClient.invalidateQueries({ queryKey: ["compounds"] });
+        queryClient.invalidateQueries({ queryKey: ["compounds", ""] });
 
-        fetchCompound();
+        fetchCompound({});
 
         toast.success("Compound updated successfully");
 
@@ -133,15 +160,10 @@ const EditCompoundModal = ({
         router.replace(`/dashboard/compounds/${compoundId}`);
       },
       onError: (err) => {
-        toast.error("Something went wrong while adding compound");
+        toast.error("Something went wrong while updating compound");
       },
     });
   };
-
-  // if (!compound) {
-  //   router.replace("/dashboard/compounds");
-  //   return null;
-  // }
 
   return (
     <Dialog open={openModal}>

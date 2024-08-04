@@ -41,12 +41,16 @@ const UploadDiagnosisReport = ({
   const {
     register,
     reset,
+    watch,
     formState: { errors },
     handleSubmit,
   } = useForm<DiagnosisReportType>({
     resolver: zodResolver(diagnosisReportSchema),
     mode: "all",
   });
+
+  const date = watch("date");
+  const doctorName = watch("doctorName");
 
   const {
     mutateAsync,
@@ -58,6 +62,15 @@ const UploadDiagnosisReport = ({
       createOrEditDiagnosisReport(data, patientId, undefined),
     config: {
       queryKey: ["patients", "diagnosis-reports", patientId],
+    },
+    notificationData: {
+      type: "New Diagnosis Report",
+      title: "New diagnosis report has been added",
+      description: `A new diagnosis report for ${doctorName} has been added successfully and is scheduled for ${new Date(
+        date
+      ).toLocaleDateString("en-US", {
+        dateStyle: "full",
+      })}`,
     },
   });
 
@@ -154,7 +167,7 @@ const UploadDiagnosisReport = ({
                         />
                       </div>
 
-                      <div className="grid grid-cols-1 gap-5 w-full px-2 md:px-5">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-5 w-full px-2 md:px-5">
                         <CustomInputForm
                           labelName="Symptoms"
                           inputName="symptoms"
@@ -164,6 +177,17 @@ const UploadDiagnosisReport = ({
                           placeholderText="eg. Fever, Cough, Headache"
                         />
 
+                        <CustomInputForm
+                          labelName="Final Diagnosis"
+                          inputName="finalDiagnosis"
+                          register={register}
+                          errors={errors}
+                          inputType="text"
+                          placeholderText="eg. Malaria"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 gap-5 w-full px-2 md:px-5">
                         <CustomInputForm
                           labelName="Notes"
                           inputName="notes"

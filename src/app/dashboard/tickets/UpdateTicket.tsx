@@ -1,6 +1,6 @@
 "use client";
 
-import { PlusCircle, X } from "lucide-react";
+import { Edit, X } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -17,112 +17,85 @@ import CustomInputForm from "@/components/CustomInputForm";
 import { toast } from "react-toastify";
 import { useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-import { useAuth } from "@/hooks";
-import { ticketSchema } from "@/schema/ticket.schema";
-import { TicketType } from "@/types/index";
 import { useFetch, useMutateData } from "@/hooks/useFetch";
-import { createTicket, getAllTickets } from "@/actions/tickets.action";
-import CustomFileUpload from "@/components/CustomFileUpload";
-import { axiosInstance } from "@/lib/utils";
+import { getAllTickets, updateTicket } from "@/actions/tickets.action";
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import RenderCustomError from "@/components/RenderCustomError";
+import { ITicket } from "@/types/backend";
+import { z } from "zod";
 
-const AddTicket = () => {
+const ticketStatusSchema = z.object({
+  status: z.enum(["OPEN", "CLOSED"], { message: "Invalid status" }),
+  priority: z.enum(["HIGH", "MEDIUM", "LOW"], { message: "Invalid priority" }),
+});
+
+type TicketStatus = z.infer<typeof ticketStatusSchema>;
+
+const UpdateTicket = ({ ticket }: { ticket: ITicket }) => {
   const { refetch: refetchTickets } = useFetch({
     queryKey: ["tickets"],
     queryFn: async () => await getAllTickets(),
     enabled: true,
   });
 
-  const [user] = useAuth();
   const queryClient = useQueryClient();
   const router = useRouter();
   const [open, setOpen] = useState(false);
 
   const {
     register,
-    watch,
-    setValue,
     reset,
     formState: { errors, isSubmitting: pending },
     handleSubmit,
-  } = useForm<TicketType>({
-    resolver: zodResolver(ticketSchema),
+  } = useForm<TicketStatus>({
+    resolver: zodResolver(ticketStatusSchema),
+    defaultValues: {
+      status: ticket.status as TicketStatus["status"],
+      priority: ticket.priority as TicketStatus["priority"],
+    },
     mode: "all",
   });
 
-  const subject = watch("subject");
-
   const { mutateAsync, isError, error } = useMutateData({
-    mutationFn: async (data: TicketType) => createTicket(data),
+    mutationFn: async (data: TicketStatus) => updateTicket(data, ticket._id),
     config: {
       queryKey: ["tickets"],
     },
-    notificationData: {
-      type: "New Ticket",
-      title: "New ticket has been created",
-      description: `A ticket with subject ${subject} has been created successfully`,
-    },
   });
 
-  const submitForm: SubmitHandler<TicketType> = async (data) => {
-    if (!data.attachment?.length) {
-      toast.info("Please attach an image of the issue");
-      return;
-    }
-
-    const formData = new FormData();
-    formData.append("image", data.attachment[0]);
-
-    const res = await axiosInstance.post("/upload", formData, {
-      headers: {
-        "Content-Type": "multipart/form-data",
-        Authorization: `Bearer ${user?.auth.token}`,
+  const submitForm: SubmitHandler<TicketStatus> = async (data) => {
+    await mutateAsync(data, {
+      onSuccess: () => {
+        toast.success("Ticket updated successfully");
+        queryClient.invalidateQueries({
+          queryKey: ["tickets"],
+        });
+        setOpen(false);
+        refetchTickets();
+        reset();
+        router.refresh();
       },
     });
-
-    const resData = await res.data;
-
-    const fileUrl = resData?.fileUrl
-      ? (resData?.fileUrl as string)
-      : "https://d140uiq1keqywy.cloudfront.net/06744b93015fd3083d32b863359723ab-large.png";
-
-    await mutateAsync(
-      { ...data, attachment: fileUrl },
-      {
-        onSuccess: () => {
-          toast.success("Ticket created successfully");
-          queryClient.invalidateQueries({
-            queryKey: ["tickets"],
-          });
-          setOpen(false);
-          refetchTickets();
-          reset();
-          router.refresh();
-        },
-      }
-    );
   };
 
   return (
     <>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogTrigger asChild onClick={() => setOpen(true)}>
-          <Button className="bg-primary-green hover:bg-primary-green hover:scale-105 transition py-2 px-5 items-center gap-3 rounded-md text-white hidden">
-            <PlusCircle className="text-white" size={20} />
-            <span className="font-bold">Add Ticket</span>
-          </Button>
+          <button>
+            <Edit className="text-primary-green" size={20} />
+          </button>
         </DialogTrigger>
 
         <DialogContent
           id="hide"
-          className="flex flex-col gap-4 w-full max-w-[90vw] md:max-w-[50vw] max-h-[95vh] h-full overflow-hidden bg-white rounded-none"
+          className="flex flex-col gap-4 w-full max-w-[90vw] md:max-w-[50vw] overflow-hidden bg-white rounded-none"
         >
           <DialogHeader className="overflow-y-scroll scrollbar-hide">
             <DialogTitle className="flex items-center justify-between">
               <span className="text-xl md:text-2xl text-secondary-gray font-bold">
-                New Ticket
+                Update Ticket {ticket.ticketId}
               </span>
               <DialogClose
                 onClick={() => {
@@ -149,37 +122,49 @@ const AddTicket = () => {
                 <div className="flex flex-col gap-5 pt-5 pb-10 h-full">
                   <div className="grid grid-cols-1 gap-5 w-full">
                     <CustomInputForm
-                      labelName="Subject"
-                      inputName="subject"
+                      labelName="Status"
+                      inputName="status"
                       register={register}
                       errors={errors}
-                      inputType="text"
-                      placeholderText="Enter subject"
+                      inputType="select"
+                      selectOptions={[
+                        {
+                          value: "OPEN",
+                          label: "Open",
+                        },
+                        {
+                          value: "CLOSED",
+                          label: "Closed",
+                        },
+                      ]}
                     />
 
                     <CustomInputForm
-                      labelName="Description"
-                      inputName="description"
+                      labelName="Priority"
+                      inputName="priority"
                       register={register}
                       errors={errors}
-                      inputType="text"
-                      placeholderText="Enter description"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-1 gap-5 w-full">
-                    <CustomFileUpload
-                      itemName="attachment"
-                      title="Attachment"
-                      setValue={setValue}
-                      watch={watch}
-                      allowMultiple={false}
+                      inputType="select"
+                      selectOptions={[
+                        {
+                          value: "HIGH",
+                          label: "High",
+                        },
+                        {
+                          value: "MEDIUM",
+                          label: "Medium",
+                        },
+                        {
+                          value: "LOW",
+                          label: "Low",
+                        },
+                      ]}
                     />
                   </div>
                 </div>
 
                 {/* Submit form button */}
-                <AddTicketButton pending={pending} reset={reset} />
+                <UpdateTicketButton pending={pending} reset={reset} />
               </form>
             </div>
           </DialogHeader>
@@ -189,10 +174,10 @@ const AddTicket = () => {
   );
 };
 
-export default AddTicket;
+export default UpdateTicket;
 
 // Submit form button
-const AddTicketButton = ({
+const UpdateTicketButton = ({
   pending,
   reset,
 }: {
@@ -221,7 +206,7 @@ const AddTicketButton = ({
         {pending ? (
           <ClipLoader size={28} loading={pending} color="white" />
         ) : (
-          "Save"
+          "Update"
         )}
       </Button>
     </div>

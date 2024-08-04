@@ -24,6 +24,7 @@ import {
 import { IChpsCompound } from "@/types/backend";
 import RenderCustomError from "@/components/RenderCustomError";
 import { Checkbox } from "@/components/ui/checkbox";
+import { axiosInstance } from "@/lib/utils";
 
 const AddCompoundForm = () => {
   const { refetch: refetchCompounds } = useFetch({
@@ -38,7 +39,8 @@ const AddCompoundForm = () => {
 
   const {
     register,
-    formState: { errors },
+    reset,
+    formState: { errors, isSubmitting: pending },
     handleSubmit,
     watch,
     setValue,
@@ -55,28 +57,55 @@ const AddCompoundForm = () => {
   });
 
   const profilePicture = watch("profilePicture");
+  const name = watch("name");
 
-  const {
-    mutateAsync,
-    isPending: pending,
-    error,
-    isError,
-  } = useMutateData<CompoundType, IChpsCompound>({
+  const { mutateAsync, error, isError } = useMutateData<
+    CompoundType,
+    IChpsCompound
+  >({
     mutationFn: async (data: CompoundType) => createChpsCompound(data),
     config: {
       queryKey: ["compounds"],
+    },
+    notificationData: {
+      type: "New Compound",
+      title: "New compound has been added",
+      description: `The compound ${name} has been added successfully`,
     },
   });
 
   const submitAddCompound: SubmitHandler<
     CompoundType & { profilePicture: any }
   > = async (data) => {
-    await mutateAsync(data, {
+    if (profilePicture && profilePicture.length > 0) {
+      const formData = new FormData();
+      formData.append("image", profilePicture[0]);
+
+      const res = await axiosInstance.post("/upload", formData, {
+        headers: {
+          "Content-Type": "multipart/form-data",
+          Authorization: `Bearer ${user?.auth.token}`,
+        },
+      });
+
+      const resData = await res.data;
+
+      data.profilePictureUrl =
+        resData?.fileUrl ||
+        "https://d140uiq1keqywy.cloudfront.net/bc370c0ad6918107a4f7e30db2941a03-dashboard-header.svg";
+    }
+
+    const { profilePicture: pic, ...rest } = data;
+
+    await mutateAsync(rest as CompoundType, {
       onSuccess: (data) => {
         const compoundId = data?.chpsCompound._id!;
         queryClient.invalidateQueries({ queryKey: ["compounds"] });
+        queryClient.invalidateQueries({ queryKey: ["compounds", ""] });
         refetchCompounds();
         toast.success("Compound added successfully");
+        reset();
+        setValue("profilePicture", null);
         router.replace(`/dashboard/compounds/${compoundId}`);
       },
       onError: (err) => {
